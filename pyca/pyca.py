@@ -1,5 +1,8 @@
-import pyximport; pyximport.install()
-from .pyca_ops import ca
+try:
+  from .pyca_ops import ca, probabilistic_ca
+except ImportError:
+  import pyximport; pyximport.install()
+  from .pyca_ops import ca, probabilistic_ca
 
 import numpy as np
 

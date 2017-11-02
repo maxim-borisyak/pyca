@@ -1,1 +1,1 @@
-from .pyca import ca
+from .pyca import ca, probabilistic_ca

@@ -54,7 +54,7 @@ extensions = [
 setup(
   name='pyca',
 
-  version='0.1.0',
+  version='0.1.1',
 
   description="""Python Cellular Automata""",
 
