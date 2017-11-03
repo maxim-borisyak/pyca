@@ -5,6 +5,7 @@ cimport cython
 ctypedef cnp.float32_t float32
 
 ctypedef cnp.uint8_t STATE
+ctypedef cnp.uint8_t uint8
 ctypedef cnp.uint8_t[:, :] RULES
 ctypedef float32[:, :] PROB_RULES
 
@@ -24,7 +25,44 @@ cdef inline float32 frand() nogil:
 @cython.overflowcheck(False)
 @cython.wraparound(False)
 @cython.infer_types(True)
-cdef inline int neighbors(STATE[:, :, :] buffer, int i, int j, int k, int w, int h):
+cdef inline int neighbors_nowrap(STATE[:, :, :] buffer, int i, int j, int k, int w, int h):
+  cdef int n = 0
+
+  if j - 1 >= 0 and i - 1 >= 0 and j + 1 < h and i + 1 < w:
+    n += buffer[k, i - 1, j - 1]
+    n += buffer[k, i,     j - 1]
+    n += buffer[k, i + 1, j - 1]
+
+    n += buffer[k, i - 1, j]
+    n += buffer[k, i + 1, j]
+
+    n += buffer[k, i - 1, j + 1]
+    n += buffer[k, i,     j + 1]
+    n += buffer[k, i + 1, j + 1]
+
+    return n
+  else:
+    if j - 1 >= 0:
+      n += buffer[k, i - 1, j - 1] if i - 1 >= 0 else 0
+      n += buffer[k, i, j - 1]
+      n += buffer[k, i + 1, j - 1] if i + 1 < w else 0
+
+    n += buffer[k, i - 1, j] if i - 1 >= 0 else 0
+    n += buffer[k, i + 1, j] if i + 1 < w else 0
+
+    if j + 1 < h:
+      n += buffer[k, i - 1, j + 1] if i - 1 >= 0 else 0
+      n += buffer[k, i, j + 1]
+      n += buffer[k, i + 1, j + 1] if i + 1 < w else 0
+
+  return n
+
+@cython.boundscheck(False)
+@cython.nonecheck(False)
+@cython.overflowcheck(False)
+@cython.wraparound(False)
+@cython.infer_types(True)
+cdef inline int neighbors_wrap(STATE[:, :, :] buffer, int i, int j, int k, int w, int h):
   cdef int n = 0
   cdef int p, q
 
@@ -67,7 +105,18 @@ cdef inline int neighbors(STATE[:, :, :] buffer, int i, int j, int k, int w, int
 @cython.overflowcheck(False)
 @cython.wraparound(False)
 @cython.infer_types(True)
-cdef STATE[:, :, :] ca_step(RULES rules, STATE[:, :, :] buffer, STATE[:, :, :] output):
+cdef inline int neighbors(STATE[:, :, :] buffer, int i, int j, int k, int w, int h, uint8 wrap = 0):
+  if wrap == 0:
+    return neighbors_nowrap(buffer, i, j, k, w, h)
+  else:
+    return neighbors_wrap(buffer, i, j, k, w, h)
+
+@cython.boundscheck(False)
+@cython.nonecheck(False)
+@cython.overflowcheck(False)
+@cython.wraparound(False)
+@cython.infer_types(True)
+cdef STATE[:, :, :] ca_step(RULES rules, STATE[:, :, :] buffer, STATE[:, :, :] output, uint8 wrap=0):
   """
   Performs one step of cellular automaton according to the `rules`.
 
@@ -87,7 +136,7 @@ cdef STATE[:, :, :] ca_step(RULES rules, STATE[:, :, :] buffer, STATE[:, :, :] o
   for k in range(buffer.shape[0]):
     for i in range(w):
       for j in range(h):
-        n = neighbors(buffer, i, j, k, w, h)
+        n = neighbors(buffer, i, j, k, w, h, wrap)
         output[k, i, j] = rules[buffer[k, i, j], n]
 
   return output
@@ -96,14 +145,14 @@ cdef STATE[:, :, :] ca_step(RULES rules, STATE[:, :, :] buffer, STATE[:, :, :] o
 @cython.overflowcheck(False)
 @cython.wraparound(False)
 @cython.infer_types(True)
-cpdef STATE[:, :, :] ca(RULES rules, STATE[:, :, :] initial, int steps, STATE[:, :, :] buffer = None):
+cpdef STATE[:, :, :] ca(RULES rules, STATE[:, :, :] initial, int steps, STATE[:, :, :] buffer=None, uint8 wrap=0):
   cdef int i
 
   if buffer is None:
     buffer = np.zeros_like(initial)
 
   for i in range(steps):
-    ca_step(rules, initial, buffer)
+    ca_step(rules, initial, buffer, wrap)
     initial, buffer = buffer, initial
 
   return initial
@@ -112,7 +161,7 @@ cpdef STATE[:, :, :] ca(RULES rules, STATE[:, :, :] initial, int steps, STATE[:,
 @cython.overflowcheck(False)
 @cython.wraparound(False)
 @cython.infer_types(True)
-cpdef STATE[:, :, :] uniform_ca(RULES rules, STATE[:, :, :] initial, int steps, float32 init_prob, STATE[:, :, :] buffer = None):
+cpdef STATE[:, :, :] uniform_ca(RULES rules, STATE[:, :, :] initial, int steps, float32 init_prob, STATE[:, :, :] buffer=None, uint8 wrap=0):
   cdef int i, j, k
 
   for i in range(initial.shape[0]):
@@ -120,26 +169,26 @@ cpdef STATE[:, :, :] uniform_ca(RULES rules, STATE[:, :, :] initial, int steps, 
       for k in range(initial.shape[2]):
         initial[i, j, k] = 1 if frand() < init_prob else 0
 
-  return ca(rules, initial, steps, buffer)
+  return ca(rules, initial, steps, buffer, wrap)
 
 @cython.boundscheck(False)
 @cython.nonecheck(False)
 @cython.overflowcheck(False)
 @cython.wraparound(False)
 @cython.infer_types(True)
-def uniform_ca_stream(RULES rules, int steps, shape, float32 init_prob):
+def uniform_ca_stream(RULES rules, int steps, shape, float32 init_prob, uint8 wrap=0):
   initial = np.ndarray(shape=shape, dtype='uint8')
   buffer = np.ndarray(shape=shape, dtype='uint8')
 
   while True:
-    yield uniform_ca(rules, initial, steps, init_prob, buffer)
+    yield uniform_ca(rules, initial, steps, init_prob, buffer, wrap)
 
 @cython.boundscheck(False)
 @cython.nonecheck(False)
 @cython.overflowcheck(False)
 @cython.wraparound(False)
 @cython.infer_types(True)
-cdef STATE[:, :, :] prob_ca_step(PROB_RULES rules, STATE[:, :, :] buffer, STATE[:, :, :] output):
+cdef STATE[:, :, :] prob_ca_step(PROB_RULES rules, STATE[:, :, :] buffer, STATE[:, :, :] output, uint8 wrap=0):
   """
   Performs one step of probabilistic cellular automaton according to the `rules`.
 
@@ -160,7 +209,7 @@ cdef STATE[:, :, :] prob_ca_step(PROB_RULES rules, STATE[:, :, :] buffer, STATE[
   for k in range(buffer.shape[0]):
     for i in range(w):
       for j in range(h):
-        n = neighbors(buffer, i, j, k, w, h)
+        n = neighbors(buffer, i, j, k, w, h, wrap)
         output[k, i, j] = 1 if rules[buffer[k, i, j], n] > frand() else 0
 
   return output
@@ -169,14 +218,14 @@ cdef STATE[:, :, :] prob_ca_step(PROB_RULES rules, STATE[:, :, :] buffer, STATE[
 @cython.overflowcheck(False)
 @cython.wraparound(False)
 @cython.infer_types(True)
-cpdef STATE[:, :, :] prob_ca(PROB_RULES rules, STATE[:, :, :] initial, int steps, STATE[:, :, :] buffer = None):
+cpdef STATE[:, :, :] prob_ca(PROB_RULES rules, STATE[:, :, :] initial, int steps, STATE[:, :, :] buffer=None, uint8 wrap=0):
   cdef int i
 
   if buffer is None:
     buffer = np.zeros_like(initial)
 
   for i in range(steps):
-    prob_ca_step(rules, initial, buffer)
+    prob_ca_step(rules, initial, buffer, wrap)
     initial, buffer = buffer, initial
 
   return initial
@@ -185,7 +234,7 @@ cpdef STATE[:, :, :] prob_ca(PROB_RULES rules, STATE[:, :, :] initial, int steps
 @cython.overflowcheck(False)
 @cython.wraparound(False)
 @cython.infer_types(True)
-cpdef STATE[:, :, :] uniform_prob_ca(PROB_RULES rules, STATE[:, :, :] initial, int steps, float32 init_prob, STATE[:, :, :] buffer = None):
+cpdef STATE[:, :, :] uniform_prob_ca(PROB_RULES rules, STATE[:, :, :] initial, int steps, float32 init_prob, STATE[:, :, :] buffer=None, uint8 wrap=0):
   cdef int i, j, k
 
   for i in range(initial.shape[0]):
@@ -193,16 +242,16 @@ cpdef STATE[:, :, :] uniform_prob_ca(PROB_RULES rules, STATE[:, :, :] initial, i
       for k in range(initial.shape[2]):
         initial[i, j, k] = 1 if frand() < init_prob else 0
 
-  return prob_ca(rules, initial, steps, buffer)
+  return prob_ca(rules, initial, steps, buffer, wrap)
 
 @cython.boundscheck(False)
 @cython.nonecheck(False)
 @cython.overflowcheck(False)
 @cython.wraparound(False)
 @cython.infer_types(True)
-def uniform_prob_ca_stream(PROB_RULES rules, int steps, shape, float32 init_prob):
+def uniform_prob_ca_stream(PROB_RULES rules, int steps, shape, float32 init_prob, uint8 wrap=0):
   initial = np.ndarray(shape=shape, dtype='uint8')
   buffer = np.ndarray(shape=shape, dtype='uint8')
 
   while True:
-    yield uniform_prob_ca(rules, initial, steps, init_prob, buffer)
+    yield uniform_prob_ca(rules, initial, steps, init_prob, buffer, wrap)

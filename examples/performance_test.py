@@ -34,3 +34,13 @@ if __name__ == '__main__':
 
   print('Time per step per sample: %.1e sec' % ((end - start) / batch_size / n_steps / n))
   print('Time per batch: %.1e sec' % ((end - start) / n))
+
+  stream = uniform_prob_ca_stream(rules, n_steps, shape=(batch_size, 64, 64), init_prob=0.2, wrap=1)
+
+  start = time.time()
+  for _ in range(n):
+      next(stream)
+  end = time.time()
+
+  print('Time per step per sample: %.1e sec' % ((end - start) / batch_size / n_steps / n))
+  print('Time per batch: %.1e sec' % ((end - start) / n))
