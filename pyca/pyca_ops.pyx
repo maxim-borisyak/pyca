@@ -93,30 +93,53 @@ cdef STATE[:, :, :] ca_step(RULES rules, STATE[:, :, :] buffer, STATE[:, :, :] o
   return output
 
 @cython.boundscheck(False)
-@cython.nonecheck(False)
 @cython.overflowcheck(False)
 @cython.wraparound(False)
 @cython.infer_types(True)
-cpdef STATE[:, :, :] ca(RULES rules, STATE[:, :, :] initial, int steps):
-  cdef STATE[:, :, :] buffer1 = initial
-  cdef STATE[:, :, :] buffer2 = np.zeros_like(initial)
-
+cpdef STATE[:, :, :] ca(RULES rules, STATE[:, :, :] initial, int steps, STATE[:, :, :] buffer = None):
   cdef int i
 
-  for i in range(steps):
-    ca_step(rules, buffer1, buffer2)
-    buffer1, buffer2 = buffer2, buffer1
+  if buffer is None:
+    buffer = np.zeros_like(initial)
 
-  initial[:] = buffer1[:]
+  for i in range(steps):
+    ca_step(rules, initial, buffer)
+    initial, buffer = buffer, initial
 
   return initial
+
+@cython.boundscheck(False)
+@cython.overflowcheck(False)
+@cython.wraparound(False)
+@cython.infer_types(True)
+cpdef STATE[:, :, :] uniform_ca(RULES rules, STATE[:, :, :] initial, int steps, float32 init_prob, STATE[:, :, :] buffer = None):
+  cdef int i, j, k
+
+  for i in range(initial.shape[0]):
+    for j in range(initial.shape[1]):
+      for k in range(initial.shape[2]):
+        initial[i, j, k] = 1 if frand() < init_prob else 0
+
+  return ca(rules, initial, steps, buffer)
 
 @cython.boundscheck(False)
 @cython.nonecheck(False)
 @cython.overflowcheck(False)
 @cython.wraparound(False)
 @cython.infer_types(True)
-cdef STATE[:, :, :] probabilistic_ca_step(PROB_RULES rules, STATE[:, :, :] buffer, STATE[:, :, :] output):
+def uniform_ca_stream(RULES rules, int steps, shape, float32 init_prob):
+  initial = np.ndarray(shape=shape, dtype='uint8')
+  buffer = np.ndarray(shape=shape, dtype='uint8')
+
+  while True:
+    yield uniform_ca(rules, initial, steps, init_prob, buffer)
+
+@cython.boundscheck(False)
+@cython.nonecheck(False)
+@cython.overflowcheck(False)
+@cython.wraparound(False)
+@cython.infer_types(True)
+cdef STATE[:, :, :] prob_ca_step(PROB_RULES rules, STATE[:, :, :] buffer, STATE[:, :, :] output):
   """
   Performs one step of probabilistic cellular automaton according to the `rules`.
 
@@ -143,20 +166,43 @@ cdef STATE[:, :, :] probabilistic_ca_step(PROB_RULES rules, STATE[:, :, :] buffe
   return output
 
 @cython.boundscheck(False)
+@cython.overflowcheck(False)
+@cython.wraparound(False)
+@cython.infer_types(True)
+cpdef STATE[:, :, :] prob_ca(PROB_RULES rules, STATE[:, :, :] initial, int steps, STATE[:, :, :] buffer = None):
+  cdef int i
+
+  if buffer is None:
+    buffer = np.zeros_like(initial)
+
+  for i in range(steps):
+    prob_ca_step(rules, initial, buffer)
+    initial, buffer = buffer, initial
+
+  return initial
+
+@cython.boundscheck(False)
+@cython.overflowcheck(False)
+@cython.wraparound(False)
+@cython.infer_types(True)
+cpdef STATE[:, :, :] uniform_prob_ca(PROB_RULES rules, STATE[:, :, :] initial, int steps, float32 init_prob, STATE[:, :, :] buffer = None):
+  cdef int i, j, k
+
+  for i in range(initial.shape[0]):
+    for j in range(initial.shape[1]):
+      for k in range(initial.shape[2]):
+        initial[i, j, k] = 1 if frand() < init_prob else 0
+
+  return prob_ca(rules, initial, steps, buffer)
+
+@cython.boundscheck(False)
 @cython.nonecheck(False)
 @cython.overflowcheck(False)
 @cython.wraparound(False)
 @cython.infer_types(True)
-cpdef STATE[:, :, :] probabilistic_ca(PROB_RULES rules, STATE[:, :, :] initial, int steps):
-  cdef STATE[:, :, :] buffer1 = initial
-  cdef STATE[:, :, :] buffer2 = np.zeros_like(initial)
+def uniform_prob_ca_stream(PROB_RULES rules, int steps, shape, float32 init_prob):
+  initial = np.ndarray(shape=shape, dtype='uint8')
+  buffer = np.ndarray(shape=shape, dtype='uint8')
 
-  cdef int i
-
-  for i in range(steps):
-    probabilistic_ca_step(rules, buffer1, buffer2)
-    buffer1, buffer2 = buffer2, buffer1
-
-  initial[:] = buffer1[:]
-
-  return initial
+  while True:
+    yield uniform_prob_ca(rules, initial, steps, init_prob, buffer)

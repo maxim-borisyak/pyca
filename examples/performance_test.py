@@ -5,9 +5,7 @@ import os.path as osp
 
 sys.path.append(osp.join(osp.split(__file__)[0], '..'))
 
-print(sys.path)
-
-from pyca import ca, probabilistic_ca
+from pyca import ca, prob_ca, uniform_prob_ca_stream
 
 import time
 
@@ -23,13 +21,16 @@ if __name__ == '__main__':
   print('Rules')
   print(rules)
 
-  batch_size = 128
-  n_steps = 128
+  batch_size = 32
+  n_steps = 16
+  n = 128
 
-  buffer = (np.random.randint(100, size=(batch_size, 128, 128), dtype='uint8') < 20).astype('uint8')
+  stream = uniform_prob_ca_stream(rules, n_steps, shape=(batch_size, 64, 64), init_prob=0.2)
 
   start = time.time()
-  probabilistic_ca(rules, buffer, n_steps)
+  for _ in range(n):
+      next(stream)
   end = time.time()
 
-  print('Time per step per sample: %.1e sec' % ((end - start) / batch_size / n_steps))
+  print('Time per step per sample: %.1e sec' % ((end - start) / batch_size / n_steps / n))
+  print('Time per batch: %.1e sec' % ((end - start) / n))

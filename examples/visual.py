@@ -7,7 +7,7 @@ import numpy as np
 
 plt.switch_backend('TkAgg')
 
-from pyca import ca, probabilistic_ca
+from pyca import ca, prob_ca
 
 import time
 
@@ -29,7 +29,7 @@ if __name__ == '__main__':
   fig = plt.figure()
 
   for _ in range(1024):
-    probabilistic_ca(rules, buffer, 1)
+    buffer = prob_ca(rules, buffer, 16)
 
     plt.clf()
     plt.imshow(buffer[0])
